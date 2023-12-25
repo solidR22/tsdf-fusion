@@ -4,11 +4,12 @@
 
 #include <vector>
 #include <opencv2/opencv.hpp>
+#include <cuda_runtime.h>
 
 // Compute surface points from TSDF voxel grid and save points to point cloud file
 void SaveVoxelGrid2SurfacePointCloud(const std::string &file_name, int voxel_grid_dim_x, int voxel_grid_dim_y, int voxel_grid_dim_z,
                                      float voxel_size, float voxel_grid_origin_x, float voxel_grid_origin_y, float voxel_grid_origin_z,
-                                     float * voxel_grid_TSDF, float * voxel_grid_weight,
+                                     float * voxel_grid_TSDF, float * voxel_grid_weight, uchar3 * voxel_grid_color,
                                      float tsdf_thresh, float weight_thresh) {
 
   // Count total number of points in point cloud
@@ -25,6 +26,9 @@ void SaveVoxelGrid2SurfacePointCloud(const std::string &file_name, int voxel_gri
   fprintf(fp, "property float x\n");
   fprintf(fp, "property float y\n");
   fprintf(fp, "property float z\n");
+  fprintf(fp, "property uchar blue\n");
+  fprintf(fp, "property uchar green\n");
+  fprintf(fp, "property uchar red\n");
   fprintf(fp, "end_header\n");
 
   // Create point cloud content for ply file
@@ -42,9 +46,13 @@ void SaveVoxelGrid2SurfacePointCloud(const std::string &file_name, int voxel_gri
       float pt_base_x = voxel_grid_origin_x + (float) x * voxel_size;
       float pt_base_y = voxel_grid_origin_y + (float) y * voxel_size;
       float pt_base_z = voxel_grid_origin_z + (float) z * voxel_size;
+      uchar3 color = voxel_grid_color[i];
       fwrite(&pt_base_x, sizeof(float), 1, fp);
       fwrite(&pt_base_y, sizeof(float), 1, fp);
       fwrite(&pt_base_z, sizeof(float), 1, fp);
+      fwrite(&color.x, sizeof(char), 1, fp);
+      fwrite(&color.y, sizeof(char), 1, fp);
+      fwrite(&color.z, sizeof(char), 1, fp);
     }
   }
   fclose(fp);
@@ -67,7 +75,7 @@ std::vector<float> LoadMatrixFromFile(std::string filename, int M, int N) {
 // Read a depth image with size H x W and save the depth values (in meters) into a float array (in row-major order)
 // The depth image file is assumed to be in 16-bit PNG format, depth in millimeters
 void ReadDepth(std::string filename, int H, int W, float * depth) {
-  cv::Mat depth_mat = cv::imread(filename, CV_LOAD_IMAGE_UNCHANGED);
+  cv::Mat depth_mat = cv::imread(filename, cv::IMREAD_UNCHANGED);
   if (depth_mat.empty()) {
     std::cout << "Error: depth image file not read!" << std::endl;
     cv::waitKey(0);
@@ -77,6 +85,22 @@ void ReadDepth(std::string filename, int H, int W, float * depth) {
       depth[r * W + c] = (float)(depth_mat.at<unsigned short>(r, c)) / 1000.0f;
       if (depth[r * W + c] > 6.0f) // Only consider depth < 6m
         depth[r * W + c] = 0;
+    }
+}
+
+void ReadColor(std::string filename, int H, int W, uchar3 * color) {
+  cv::Mat color_mat = cv::imread(filename, cv::IMREAD_COLOR);
+  if (color_mat.empty()) {
+    std::cout << "Error: color image file not read!" << std::endl;
+    cv::waitKey(0);
+  }
+  for (int r = 0; r < H; ++r)
+    for (int c = 0; c < W; ++c) {
+      color[r * W + c].x = color_mat.at<cv::Vec3b>(r,c)[0];
+      color[r * W + c].y = color_mat.at<cv::Vec3b>(r,c)[1];
+      color[r * W + c].z = color_mat.at<cv::Vec3b>(r,c)[2];
+      // if (depth[r * W + c] > 6.0f) // Only consider depth < 6m
+      //   depth[r * W + c] = 0;
     }
 }
 
